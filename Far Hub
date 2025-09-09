@@ -1,0 +1,142 @@
+-- Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TeleportGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ปุ่มเปิด/ปิด GUI
+local ToggleButton = Instance.new("TextButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 120, 0, 40)
+ToggleButton.Position = UDim2.new(0, 10, 0, 10)
+ToggleButton.Text = "เปิด GUI"
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+ToggleButton.TextColor3 = Color3.new(1,1,1)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextSize = 18
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0, 8)
+
+-- Frame GUI หลัก
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 250, 0, 120)
+Frame.Position = UDim2.new(0.5, -125, 0.5, -60)
+Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Frame.Active = true
+Frame.Draggable = true
+Frame.BorderSizePixel = 0
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 12)
+
+-- TextBox ใส่ชื่อผู้เล่น
+local TextBox = Instance.new("TextBox", Frame)
+TextBox.Size = UDim2.new(1, -20, 0, 40)
+TextBox.Position = UDim2.new(0, 10, 0, 10)
+TextBox.PlaceholderText = "ใส่ชื่อผู้เล่น..."
+TextBox.Text = ""
+TextBox.ClearTextOnFocus = false
+TextBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+TextBox.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 8)
+
+-- ปุ่มเกาะตัวผู้เล่น
+local Button = Instance.new("TextButton", Frame)
+Button.Size = UDim2.new(1, -20, 0, 40)
+Button.Position = UDim2.new(0, 10, 0, 70)
+Button.Text = "เกาะตัวผู้เล่น"
+Button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+Button.TextColor3 = Color3.new(1,1,1)
+Button.Font = Enum.Font.SourceSansBold
+Button.TextSize = 20
+Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 8)
+
+-- Toggle GUI
+ToggleButton.MouseButton1Click:Connect(function()
+	if Frame.Visible then
+		Frame.Visible = false
+		ToggleButton.Text = "เปิด GUI"
+	else
+		Frame.Visible = true
+		ToggleButton.Text = "ปิด GUI"
+	end
+end)
+
+-- ฟังก์ชันหา Player ตามชื่อ (case-insensitive)
+local function getPlayerByName(name)
+	for _, player in pairs(Players:GetPlayers()) do
+		if player.Name:lower() == name:lower() then
+			if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+				return player
+			end
+		end
+	end
+	return nil
+end
+
+-- ฟังก์ชันติดตัวผู้เล่นแน่น (เวอร์ชันเร็ว)
+local function stickToPlayer(targetPlayer)
+	local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	local targetChar = targetPlayer.Character or targetPlayer.CharacterAdded:Wait()
+	
+	local myHRP = character:WaitForChild("HumanoidRootPart")
+	local targetHRP = targetChar:WaitForChild("HumanoidRootPart")
+	
+	-- ปิด Collision ของตัวเรา
+	for _, part in pairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+		end
+	end
+	
+	-- สร้าง BodyPosition + BodyGyro (ค่าแรงสูง)
+	local bodyPos = Instance.new("BodyPosition", myHRP)
+	bodyPos.MaxForce = Vector3.new(1e6,1e6,1e6)
+	bodyPos.Position = targetHRP.Position + Vector3.new(0,0.5,0)
+	bodyPos.D = 2000
+	bodyPos.P = 200000  -- 🔥 เพิ่มค่า P เพื่อให้เคลื่อนที่เร็วขึ้นมาก
+	
+	local bodyGyro = Instance.new("BodyGyro", myHRP)
+	bodyGyro.MaxTorque = Vector3.new(1e6,1e6,1e6)
+	bodyGyro.CFrame = targetHRP.CFrame
+	bodyGyro.D = 2000
+	bodyGyro.P = 200000
+	
+	-- อัพเดตตำแหน่งทุกเฟรม
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+			bodyPos.Position = targetHRP.Position + Vector3.new(0,0.5,0)
+			bodyGyro.CFrame = targetHRP.CFrame
+		end
+	end)
+	
+	-- รอจนกว่าผู้เล่นตาย
+	targetChar:WaitForChild("Humanoid").Died:Wait()
+	
+	-- คืนค่า Collision
+	for _, part in pairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = true
+		end
+	end
+	
+	-- ลบ BodyPosition + BodyGyro และ disconnect
+	bodyPos:Destroy()
+	bodyGyro:Destroy()
+	conn:Disconnect()
+end
+
+-- ปุ่มกดเกาะตัวผู้เล่น
+Button.MouseButton1Click:Connect(function()
+	local targetName = TextBox.Text
+	local targetPlayer = getPlayerByName(targetName)
+	if targetPlayer then
+		task.spawn(function()
+			stickToPlayer(targetPlayer)
+		end)
+	else
+		warn("ไม่พบผู้เล่นชื่อนี้หรือยังไม่เกิด Character")
+	end
+end)
