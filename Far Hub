@@ -63,7 +63,7 @@ ToggleButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ฟังก์ชันหา Player ตามชื่อ (case-insensitive)
+-- ฟังก์ชันหา Player ตามชื่อ
 local function getPlayerByName(name)
 	for _, player in pairs(Players:GetPlayers()) do
 		if player.Name:lower() == name:lower() then
@@ -75,7 +75,7 @@ local function getPlayerByName(name)
 	return nil
 end
 
--- ฟังก์ชันติดตัวผู้เล่นแน่น (เวอร์ชันเร็ว)
+-- ฟังก์ชันติดตัวผู้เล่นแน่น
 local function stickToPlayer(targetPlayer)
 	local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local targetChar = targetPlayer.Character or targetPlayer.CharacterAdded:Wait()
@@ -90,12 +90,12 @@ local function stickToPlayer(targetPlayer)
 		end
 	end
 	
-	-- สร้าง BodyPosition + BodyGyro (ค่าแรงสูง)
+	-- สร้าง BodyPosition + BodyGyro
 	local bodyPos = Instance.new("BodyPosition", myHRP)
 	bodyPos.MaxForce = Vector3.new(1e6,1e6,1e6)
 	bodyPos.Position = targetHRP.Position + Vector3.new(0,0.5,0)
 	bodyPos.D = 2000
-	bodyPos.P = 200000  -- 🔥 เพิ่มค่า P เพื่อให้เคลื่อนที่เร็วขึ้นมาก
+	bodyPos.P = 200000
 	
 	local bodyGyro = Instance.new("BodyGyro", myHRP)
 	bodyGyro.MaxTorque = Vector3.new(1e6,1e6,1e6)
@@ -106,26 +106,46 @@ local function stickToPlayer(targetPlayer)
 	-- อัพเดตตำแหน่งทุกเฟรม
 	local conn
 	conn = RunService.RenderStepped:Connect(function()
-		if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+		if targetPlayer.Parent == nil or not targetChar.Parent then
+			-- ผู้เล่นออกเกม → ยกเลิก
+			conn:Disconnect()
+			bodyPos:Destroy()
+			bodyGyro:Destroy()
+		elseif targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
 			bodyPos.Position = targetHRP.Position + Vector3.new(0,0.5,0)
 			bodyGyro.CFrame = targetHRP.CFrame
 		end
 	end)
 	
-	-- รอจนกว่าผู้เล่นตาย
-	targetChar:WaitForChild("Humanoid").Died:Wait()
-	
-	-- คืนค่า Collision
-	for _, part in pairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = true
+	-- ถ้า target ตาย → ยกเลิก
+	local diedConn
+	diedConn = targetChar:WaitForChild("Humanoid").Died:Connect(function()
+		if conn then conn:Disconnect() end
+		if diedConn then diedConn:Disconnect() end
+		bodyPos:Destroy()
+		bodyGyro:Destroy()
+		-- คืนค่า Collision
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+			end
 		end
-	end
+	end)
 	
-	-- ลบ BodyPosition + BodyGyro และ disconnect
-	bodyPos:Destroy()
-	bodyGyro:Destroy()
-	conn:Disconnect()
+	-- ถ้า target ออกจากเกม → ยกเลิก
+	targetPlayer.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			if conn then conn:Disconnect() end
+			if diedConn then diedConn:Disconnect() end
+			bodyPos:Destroy()
+			bodyGyro:Destroy()
+			for _, part in pairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = true
+				end
+			end
+		end
+	end)
 end
 
 -- ปุ่มกดเกาะตัวผู้เล่น
